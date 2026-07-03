@@ -6,7 +6,7 @@ This repository contains the backend for [APT Map](https://lngt-apt-study-map.ve
 
 **APT Map: A Longitudinal Study of Advanced Persistent Threats**
 DOI: [10.1145/3719027.3765085](https://doi.org/10.1145/3719027.3765085)
-\*Proceedings of the ACM Conference on Computer and Communications Security (CCS), 2025\*\*
+\*Proceedings of the ACM Conference on Computer and Communications Security (CCS), 2025\*
 
 ---
 
