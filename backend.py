@@ -10,6 +10,7 @@ import schedule
 import time
 import subprocess
 import shutil
+import io
 import pandas as pd
 from langchain_google_genai import GoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain.prompts import ChatPromptTemplate
@@ -41,6 +42,7 @@ CORS(app)
 
 url = os.getenv("REPOSITORY_API")
 token = os.getenv("GITHUB_TOKEN")
+GITHUB_REPO = os.getenv("GITHUB_REPO", "SecAI-Lab/APTMap-backend")
 gemini_api_key = os.getenv("GOOGLE_API_KEY")
 LLM_MODEL = "gemini-1.5-flash-latest"
 EMBEDDING_MODEL = 'models/embedding-001'
@@ -441,6 +443,111 @@ if not hasattr(run_scheduler, "initialized"):
     scheduler_thread.start()
     run_scheduler.initialized = True
 
+def create_entry_pr(entry):
+    base_owner, base_repo_name = GITHUB_REPO.split("/", 1)
+    file_path = "APT MAP Data.xlsx"
+    gh_api = "https://api.github.com"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    encoded_path = file_path.replace(" ", "%20")
+
+    file_resp = requests.get(
+        f"{gh_api}/repos/{base_owner}/{base_repo_name}/contents/{encoded_path}",
+        headers=headers,
+    )
+    if file_resp.status_code != 200:
+        return None, f"Failed to fetch Excel from GitHub: {file_resp.json().get('message', '')}"
+
+    file_data = file_resp.json()
+    file_sha = file_data["sha"]
+    file_content = base64.b64decode(file_data["content"])
+
+    df = pd.read_excel(io.BytesIO(file_content))
+    for col in ENTRY_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    df = pd.concat([df, pd.DataFrame([entry], columns=ENTRY_COLUMNS)], ignore_index=True)
+
+    output = io.BytesIO()
+    df.to_excel(output, index=False)
+    new_content_b64 = base64.b64encode(output.getvalue()).decode()
+
+    ref_resp = requests.get(
+        f"{gh_api}/repos/{base_owner}/{base_repo_name}/git/ref/heads/main",
+        headers=headers,
+    )
+    if ref_resp.status_code != 200:
+        return None, f"Failed to get main branch: {ref_resp.json().get('message', '')}"
+    main_sha = ref_resp.json()["object"]["sha"]
+
+    branch_name = f"add-entry-{uuid.uuid4().hex[:8]}"
+    branch_resp = requests.post(
+        f"{gh_api}/repos/{base_owner}/{base_repo_name}/git/refs",
+        headers=headers,
+        json={"ref": f"refs/heads/{branch_name}", "sha": main_sha},
+    )
+    if branch_resp.status_code != 201:
+        return None, f"Failed to create branch: {branch_resp.json().get('message', '')}"
+
+    commit_resp = requests.put(
+        f"{gh_api}/repos/{base_owner}/{base_repo_name}/contents/{encoded_path}",
+        headers=headers,
+        json={
+            "message": f"Add APT entry: {entry.get('Threat Actor', 'Unknown')} ({entry.get('Date', '')})",
+            "content": new_content_b64,
+            "sha": file_sha,
+            "branch": branch_name,
+        },
+    )
+    if commit_resp.status_code not in (200, 201):
+        return None, f"Failed to commit file: {commit_resp.json().get('message', '')}"
+
+    field_labels = [
+        ("Date", "Date"),
+        ("Download Url", "Download Url"),
+        ("Source", "Source"),
+        ("CVE", "CVE"),
+        ("Zero-Day", "Zero-Day"),
+        ("Threat Actor", "Threat Actor"),
+        ("Threat Country", "Threat Country"),
+        ("Victims", "Victims"),
+        ("New Start Date", "New Start Date"),
+        ("New End Date", "New End Date"),
+        ("Duration", "Duration"),
+        ("AttackVector", "AttackVector"),
+        ("Malware", "Malware"),
+        ("Target Sectors", "Target Sectors"),
+    ]
+    table_rows = "\n".join(
+        f"| {label} | {entry.get(col, '')} |"
+        for col, label in field_labels
+    )
+    pr_body = (
+        "## New APT Entry Submission\n\n"
+        "| Field | Value |\n"
+        "|-------|-------|\n"
+        f"{table_rows}"
+    )
+
+    pr_resp = requests.post(
+        f"{gh_api}/repos/{base_owner}/{base_repo_name}/pulls",
+        headers=headers,
+        json={
+            "title": f"Add APT entry: {entry.get('Threat Actor', 'Unknown')} ({entry.get('Date', '')})",
+            "head": branch_name,
+            "base": "main",
+            "body": pr_body,
+        },
+    )
+    if pr_resp.status_code != 201:
+        return None, f"Failed to create PR: {pr_resp.json().get('message', '')}"
+
+    return pr_resp.json()["html_url"], None
+
+
 @app.route('/')
 def home():
     return "Welcome to the README update checker!"
@@ -471,19 +578,21 @@ def get_apt_data():
             return jsonify({"error": "Request body must be a JSON object."}), 400
 
         if request.method == 'POST':
-            entry_payload = payload.get("entry", payload)
+            entry_payload = dict(payload.get("entry", payload))
+            entry_payload.pop("githubToken", None)
             entry, error = validate_entry_payload(entry_payload)
             if error:
                 return jsonify({"error": error}), 400
 
-            with excel_lock:
-                df = read_apt_dataframe()
-                df = pd.concat([df, pd.DataFrame([entry], columns=ENTRY_COLUMNS)], ignore_index=True)
-                write_apt_dataframe(df)
-                created_entry = dataframe_to_records(df.tail(1), include_id=True)[0]
-                created_entry["id"] = str(len(df) - 1)
+            pr_url, pr_error = create_entry_pr(entry)
+            if pr_error:
+                return jsonify({"error": pr_error}), 500
 
-            return jsonify(created_entry), 201
+            return jsonify({
+                "message": f"Pull request created — awaiting review.",
+                "pr_url": pr_url,
+                **entry,
+            }), 201
 
         entry_id = payload.get("id")
 
