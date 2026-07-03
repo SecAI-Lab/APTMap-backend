@@ -6,7 +6,7 @@ This repository contains the backend for [APT Map](https://lngt-apt-study-map.ve
 
 **APT Map: A Longitudinal Study of Advanced Persistent Threats**
 DOI: [10.1145/3719027.3765085](https://doi.org/10.1145/3719027.3765085)
-*Proceedings of the ACM Conference on Computer and Communications Security (CCS), 2025*
+\*Proceedings of the ACM Conference on Computer and Communications Security (CCS), 2025\*\*
 
 ---
 
@@ -31,12 +31,12 @@ The backend is a Flask REST API deployed on Heroku. It serves APT incident data 
 
 ## Environment Variables
 
-| Variable | Description |
-|---|---|
-| `GITHUB_TOKEN` | Classic GitHub PAT with `public_repo` scope, used to open pull requests for submitted entries |
-| `GITHUB_REPO` | Target repository for pull requests (default: `xininny/APT-backend`) |
-| `GOOGLE_API_KEY` | Google AI API key for the embedding/search features |
-| `REPOSITORY_API` | GitHub API URL for the data repository |
+| Variable         | Description                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| `GITHUB_TOKEN`   | Classic GitHub PAT with `public_repo` scope, used to open pull requests for submitted entries |
+| `GITHUB_REPO`    | Target repository for pull requests (default: `xininny/APT-backend`)                          |
+| `GOOGLE_API_KEY` | Google AI API key for the embedding/search features                                           |
+| `REPOSITORY_API` | GitHub API URL for the data repository                                                        |
 
 ## Running Locally
 
@@ -50,13 +50,13 @@ The server starts on `http://localhost:8000`.
 
 ## API Endpoints
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/get-apt-data` | Returns all APT entries as JSON |
-| `POST` | `/get-apt-data` | Submits a new entry; creates a GitHub pull request |
-| `POST` | `/extract-report` | Starts an async LLM extraction job for a URL or PDF |
-| `GET` | `/extract-report/<job_id>` | Polls the status of an extraction job |
-| `GET` | `/get-threat-country` | Returns country metadata |
+| Method | Path                       | Description                                         |
+| ------ | -------------------------- | --------------------------------------------------- |
+| `GET`  | `/get-apt-data`            | Returns all APT entries as JSON                     |
+| `POST` | `/get-apt-data`            | Submits a new entry; creates a GitHub pull request  |
+| `POST` | `/extract-report`          | Starts an async LLM extraction job for a URL or PDF |
+| `GET`  | `/extract-report/<job_id>` | Polls the status of an extraction job               |
+| `GET`  | `/get-threat-country`      | Returns country metadata                            |
 
 ## Citation
 
