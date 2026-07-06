@@ -8,8 +8,8 @@ import uuid
 import threading
 import schedule
 import time
-import subprocess
-import shutil
+# import subprocess        # unused — run_claude_job disabled
+# import shutil            # unused — _find_claude_cli disabled
 import io
 import pandas as pd
 from langchain_google_genai import GoogleGenerativeAI, GoogleGenerativeAIEmbeddings
@@ -23,19 +23,21 @@ from flask_cors import CORS
 load_dotenv()
 
 
-def _find_claude_cli():
-    candidates = [
-        shutil.which("claude"),
-        os.path.expanduser("~/.local/bin/claude"),
-        "/usr/local/bin/claude",
-        "/usr/bin/claude",
-    ]
-    for path in candidates:
-        if path and os.path.isfile(path) and os.access(path, os.X_OK):
-            return path
-    return None
-
-CLAUDE_CLI = _find_claude_cli()
+# --- run_claude local CLI feature (disabled) ---
+# def _find_claude_cli():
+#     candidates = [
+#         shutil.which("claude"),
+#         os.path.expanduser("~/.local/bin/claude"),
+#         "/usr/local/bin/claude",
+#         "/usr/bin/claude",
+#     ]
+#     for path in candidates:
+#         if path and os.path.isfile(path) and os.access(path, os.X_OK):
+#             return path
+#     return None
+#
+# CLAUDE_CLI = _find_claude_cli()
+# --- end run_claude local CLI feature ---
 
 app = Flask(__name__)
 CORS(app) 
@@ -103,32 +105,33 @@ def _read_job(job_id):
         return json.load(f)
 
 
-def load_threat_actor_lookup():
-    """Build a dict: normalised_name -> (primary_name, country_code)
-    covering both the Threat Actor column and every alias in Other Names."""
-    lookup = {}
-    try:
-        df = pd.read_excel(THREAT_COUNTRY_FILE)
-        for _, row in df.iterrows():
-            primary = str(row.get("Threat Actor") or "").strip()
-            country = str(row.get("Country") or "").strip()
-            if not primary or primary.lower() == "nan":
-                continue
-            country = country if country and country.lower() != "nan" else "N/A"
-            lookup[primary.lower()] = (primary, country)
-
-            other = str(row.get("Other Names") or "")
-            if other and other.lower() != "nan":
-                for alias in other.split(","):
-                    alias = alias.strip()
-                    if alias:
-                        lookup[alias.lower()] = (primary, country)
-    except Exception as e:
-        print(f"Warning: could not load {THREAT_COUNTRY_FILE}: {e}")
-    return lookup
-
-
-threat_actor_lookup = load_threat_actor_lookup()
+# --- run_claude threat actor lookup (disabled) ---
+# def load_threat_actor_lookup():
+#     """Build a dict: normalised_name -> (primary_name, country_code)
+#     covering both the Threat Actor column and every alias in Other Names."""
+#     lookup = {}
+#     try:
+#         df = pd.read_excel(THREAT_COUNTRY_FILE)
+#         for _, row in df.iterrows():
+#             primary = str(row.get("Threat Actor") or "").strip()
+#             country = str(row.get("Country") or "").strip()
+#             if not primary or primary.lower() == "nan":
+#                 continue
+#             country = country if country and country.lower() != "nan" else "N/A"
+#             lookup[primary.lower()] = (primary, country)
+#
+#             other = str(row.get("Other Names") or "")
+#             if other and other.lower() != "nan":
+#                 for alias in other.split(","):
+#                     alias = alias.strip()
+#                     if alias:
+#                         lookup[alias.lower()] = (primary, country)
+#     except Exception as e:
+#         print(f"Warning: could not load {THREAT_COUNTRY_FILE}: {e}")
+#     return lookup
+#
+# threat_actor_lookup = load_threat_actor_lookup()
+# --- end run_claude threat actor lookup ---
 
 excel_lock = threading.Lock()
 
@@ -274,29 +277,21 @@ def load_knowledge_base(article):
     return FAISS.load_local(db_path, embeddings, allow_dangerous_deserialization=True)
 
 def extract_links(content):
-    # 링크와 날짜 추출을 위한 패턴
     pattern = re.compile(r'\* ([A-Za-z]+\s\d{1,2}) - \[.*?\]\((https?://[^\s)]+)\)')
-    matches = pattern.findall(content)  # 전체 텍스트에서 일괄 추출
+    matches = pattern.findall(content)
 
-    # 연도 초기화
     year_pattern = re.compile(r'## (\d{4})')
     current_year = None
-
-    # 첫 번째 연도 찾기
     year_match = year_pattern.search(content)
     if year_match:
         current_year = year_match.group(1)
 
-    links = []  # 링크 저장용 리스트
-
-    # 링크 추가
+    links = []
     for month_day, url in matches:
-        if current_year:  # 연도가 있는 경우 날짜 조합
+        if current_year:
             formatted_date = f"{current_year}-{month_day.replace(' ', '-')}"
             links.append((formatted_date, url))
-
     return links
-
 
 
 def extract_cve_using_ioc_parser(text):
@@ -345,11 +340,11 @@ def check_readme_update():
     if added_links:
         print(f"New links found: {added_links}")
         process_links(added_links)
-        existing_links = new_links 
+        existing_links = new_links
     else:
         print("No new links to process.")
 
-    last_commit_time = new_commit_time 
+    last_commit_time = new_commit_time
 
 def process_links(links):
     llm = load_llm()
@@ -357,11 +352,9 @@ def process_links(links):
     timeline_prompt = load_timeline_prompt()
 
     df = read_apt_dataframe()
-
     existing_urls = set(df['Download Url'].dropna()) if not df.empty else set()
 
     for link in links:
-        # 언패킹 오류 수정
         link_date, link_url = link
 
         if link_url in existing_urls:
@@ -369,7 +362,6 @@ def process_links(links):
             continue
 
         try:
-            # 데이터 처리
             response = requests.get(link_url)
             if response.status_code == 200:
                 text = response.text
@@ -378,7 +370,6 @@ def process_links(links):
             else:
                 cve_list = "Error retrieving document"
 
-            # 질문 응답 처리
             answers = []
             start_date, end_date, duration = "Not specified", "Not specified", "Not specified"
             for idx, question in enumerate(AUTOMATION_QUESTIONS):
@@ -402,7 +393,6 @@ def process_links(links):
                     print(f"Error processing question '{question}': {e}")
                     answers.append("Error")
 
-            # 결과 저장
             df = pd.concat(
                 [df, pd.DataFrame({
                     "Date": [link_date],
@@ -432,7 +422,6 @@ def process_links(links):
 
 def run_scheduler():
     schedule.every().monday.at("00:00").do(check_readme_update)
-
     while True:
         schedule.run_pending()
         time.sleep(1)
@@ -637,235 +626,244 @@ def get_apt_data():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-def _clean_value(val, fallback="N/A"):
-    s = str(val).strip() if val is not None else ""
-    return fallback if s.lower() in ("", "none", "null") else s
+# =============================================================================
+# RUN CLAUDE LOCAL CLI FEATURE (disabled — kept for reference)
+# To re-enable: uncomment this block and restore the imports/variables above.
+# =============================================================================
+# def _clean_value(val, fallback="N/A"):
+#     s = str(val).strip() if val is not None else ""
+#     return fallback if s.lower() in ("", "none", "null") else s
+#
+#
+# def run_claude_job(job_id):
+#     try:
+#         with excel_lock:
+#             df = read_apt_dataframe()
+#         existing_urls = set(df["Download Url"].dropna().astype(str))
+#         latest_date = "2025-01-01"
+#         if not df.empty:
+#             dates = pd.to_datetime(df["Date"], errors="coerce").dropna()
+#             if not dates.empty:
+#                 latest_date = dates.max().strftime("%Y-%m-%d")
+#         existing_urls_list = "\n".join(f"- {u}" for u in sorted(existing_urls)) if existing_urls else "  (none yet)"
+#         search_prompt = f"""...(web search prompt)..."""
+#         if not CLAUDE_CLI:
+#             _write_job(job_id, {"status": "error", "error": "Claude Code CLI not found."})
+#             return
+#         result = subprocess.run(
+#             [CLAUDE_CLI, "-p", search_prompt, "--allowedTools", "WebSearch,WebFetch"],
+#             capture_output=True, text=True, timeout=300,
+#         )
+#         # ... parse response, dedup, write to Excel ...
+#         _write_job(job_id, {"status": "done", "added": ..., "skipped": ..., "entries": ...})
+#     except subprocess.TimeoutExpired:
+#         _write_job(job_id, {"status": "error", "error": "Claude Code timed out after 5 minutes."})
+#     except Exception as e:
+#         _write_job(job_id, {"status": "error", "error": str(e)})
+#
+#
+# @app.route('/run-claude', methods=['POST'])
+# def run_claude_start():
+#     job_id = str(uuid.uuid4())
+#     _write_job(job_id, {"status": "running"})
+#     thread = threading.Thread(target=run_claude_job, args=(job_id,))
+#     thread.daemon = True
+#     thread.start()
+#     return jsonify({"jobId": job_id}), 202
+#
+#
+# @app.route('/run-claude/<job_id>', methods=['GET'])
+# def run_claude_status(job_id):
+#     job = _read_job(job_id)
+#     if job is None:
+#         return jsonify({"error": "Job not found."}), 404
+#     return jsonify(job), 200
+# =============================================================================
+# END RUN CLAUDE LOCAL CLI FEATURE
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Single-report extraction  (POST /extract-report, GET /extract-report/<id>)
+# ---------------------------------------------------------------------------
+
+def _extract_pdf_text(pdf_bytes):
+    import pypdf
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    text = " ".join(page.extract_text() or "" for page in reader.pages)
+    return re.sub(r'\s+', ' ', text).strip()[:60000]
 
 
-def run_claude_job(job_id):
-    try:
-        with excel_lock:
-            df = read_apt_dataframe()
+def _fetch_report_text(url):
+    from bs4 import BeautifulSoup
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    resp = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+    resp.raise_for_status()
+    content_type = resp.headers.get("Content-Type", "")
+    if "application/pdf" in content_type or url.lower().split("?")[0].endswith(".pdf"):
+        return _extract_pdf_text(resp.content)
+    soup = BeautifulSoup(resp.content, "html.parser")
+    for tag in soup(["script", "style", "nav", "footer", "header"]):
+        tag.decompose()
+    text = soup.get_text(" ", strip=True)
+    return re.sub(r'\s+', ' ', text).strip()[:60000]
 
-        existing_urls = set(df["Download Url"].dropna().astype(str))
 
-        latest_date = "2025-01-01"
-        existing_actors_dates = set()
-        if not df.empty:
-            dates = pd.to_datetime(df["Date"], errors="coerce").dropna()
-            if not dates.empty:
-                latest_date = dates.max().strftime("%Y-%m-%d")
-            for _, row in df.iterrows():
-                actor = str(row.get("Threat Actor", "") or "").strip().lower()
-                date = str(row.get("Date", "") or "").strip()
-                if actor and actor not in ("n/a", "not mentioned") and date:
-                    existing_actors_dates.add((actor, date[:7]))  # match on actor + YYYY-MM
+def _build_extraction_prompt(report_text, url=""):
+    intro = f"Analyze the following technical report URL: {url}" if url else "Analyze the following technical report content:"
+    url_field = url if url else "full URL of the report"
+    return f"""{intro}
 
-        existing_urls_list = "\n".join(f"- {u}" for u in sorted(existing_urls)) if existing_urls else "  (none yet)"
+Use only information explicitly stated in the technical report itself. Do not use external sources, prior knowledge, threat intelligence databases, vendor blogs, news articles, search results, or assumptions.
 
-        search_prompt = f"""
-        You are a cybersecurity analyst specializing in APT (Advanced Persistent Threat) intelligence.
+First, determine whether the report describes exactly one APT incident.
+If the report contains multiple APT campaigns, multiple APT incidents, multiple unrelated threat actors, multiple unrelated operations, or functions as a quarterly/monthly roundup, threat landscape summary, campaign collection, or news digest, return exactly this text and nothing else:
+    "The technical report contains multiple APT incidents"
+Do not extract individual sub-campaigns from a multi-campaign report. Do not split a roundup report into separate JSON objects.
+If the report describes exactly one APT incident, extract the structured information using this exact schema. Do not add, remove, or rename fields.
+[
+  {{
+    "Date": "publication date in YYYY-MM-DD format",
+    "Download Url": "{url_field}",
+    "Source": "the technical report publisher (e.g., CheckPoint, Palo Alto Networks)",
+    "CVE": "comma-separated CVE IDs mentioned in the report, or N/A",
+    "Zero-Day": "TRUE if a zero-day was exploited, FALSE if not, N/A if not mentioned",
+    "Threat Actor": "name of the APT group or threat actor, or N/A",
+    "Threat Country": "country attributed to the threat actor in ISO 3166-1 alpha-2 format, e.g., US, RU, CN, or N/A",
+    "Victims": "comma-separated victim countries in ISO 3166-1 alpha-2 format, e.g., US, RU, CN, or N/A",
+    "New Start Date": "earliest known discovery date of related activity in YYYY-MM-DD format, or empty string if unknown.",
+    "New End Date": "latest known discovery date of related activity in YYYY-MM-DD format, or empty string if unknown.",
+    "Duration": "total duration of the campaign in days as a number, or N/A if unknown",
+    "AttackVector": "initial attack vectors, or N/A. Use: Spear Phishing, Phishing, Watering Hole, Credential Reuse, Social Engineering, Exploit Vulnerability, Malicious Documents, Covert Channels, Drive-by Download, Removable Media, Website Equipping, Meta Data Monitoring.",
+    "Malware": "specific malware or tool names used in the attack, or N/A",
+    "Target Sectors": "targeted sectors, or N/A. Use: Government and Defense Agencies, Corporations and Businesses, Financial Institutions, Healthcare, Energy and Utilities, Cloud/IoT Services, Manufacturing, Education and Research Institutions, Media and Entertainment Companies, Critical Infrastructure, Non-Governmental Organizations (NGOs) and Nonprofits, Individuals."
+  }}
+]
+Final output:
+ - If the report describes exactly one APT incident, return only the JSON array in the exact schema above.
+ - Do not include markdown fences, explanations, citations, comments, or reasoning.
 
-        Search the web for APT attack technical reports published AFTER {latest_date}. 
-        Look for detailed threat intelligence reports from reliables sources like Mandiant, CrowdStrike, Securelist (Kaspersky), ESET, Microsoft Security Blog, Palo Alto, and other reputable cybersecurity vendors.
+Report content:
+{report_text}"""
 
-        IMPORTANT — the following report URLs are already in the database. Do NOT include any of these in your results:
-        {existing_urls_list}
 
-        For each relevant APT technical report you find (aim for 2 reports only), extract the following structured information.
-
-        After completing all your searches, output your findings as a JSON array wrapped in <json> tags at the very end of your response. For each technical report you should identify the following properties:
-
-        {{
-        "date": "publication date in YYYY-MM-DD format",
-        "download_url": "full URL of the report",
-        "source": "the technical report publisher (e.g., CheckPoint, Palo Alto Networks)",
-        "cve": "comma-separated CVE IDs mentioned in the report, or N/A",
-        "zero_day": "TRUE if a zero-day was exploited, FALSE if not, N/A if not mentioned",
-        "threat_actor": "name of the APT group or threat actor, or N/A",
-        "threat_country": "country the threat actor is attributed to, or N/A. The country name should be in 2-letter format (e.g., US, RU, CN)",
-        "victims": "countries being targeted, or N/A. Country names should strictly follow the 2-letter format (e.g., US, RU, CN)",
-        "attack_vector": "initial attack vectors and techniques used, or N/A. Group them into one of followings: Spear Phishing, Phishing, Watering Hole, Credential Reuse, Social Engineering, Exploit Vulnerability, Malicious Documents, Covert Channels, Drive-by Download, Removable Media, Website Equipping, Meta Data Monitoring.",
-        "malware": "specific malware, tool names, or software frameworks used in the attack from this report, or N/A",
-        "start_date": "start date of the attack campaign in YYYY-MM-DD format, or empty string if unknown. If the information is known till the month, approximate the date to be the 15th day of the month.",
-        "end_date": "end date of the attack campaign in YYYY-MM-DD format, or empty string if unknown. If the information is known till the month, approximate the date to be the 15th day of the month.",
-        "duration": "total duration of the campaign in days as a number, or N/A if unknown",
-        "target_sectors": "targeted sectors, or N/A. Group them into one of followings: Government and defense agencies, Corporations and Businesses, Financial institutions, Healthcare, Energy and utilities, Cloud/IoT services, Manufacturing, Education and research institutions, Media and entertainment companies, Critical infrastructure, Non-Governmental Organizations (NGOs) and Nonprofits, Individuals."
-        }}
-
-        Rules:
-        - Only include detailed technical APT incident reports (not news summaries or opinion pieces)
-        - Only include reports published strictly after {latest_date}
-        - Do NOT include any URL from the already-in-database list above
-        - Use N/A for any field where information is not available
-        - Output the complete JSON array inside <json> ... </json> tags at the end
-        """
-
-        if not CLAUDE_CLI:
-            _write_job(job_id, {
-                "status": "error",
-                "error": "Claude Code CLI not found. Make sure `claude` is installed and on PATH.",
-            })
-            return
-
-        result = subprocess.run(
-            [CLAUDE_CLI, "-p", search_prompt, "--allowedTools", "WebSearch,WebFetch"],
-            capture_output=True,
-            text=True,
-            timeout=300,
+def _complete_llm(llm, api_key, prompt):
+    if llm == "claude":
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model="claude-opus-4-8",
+            max_tokens=8000,
+            messages=[{"role": "user", "content": prompt}],
         )
+        return msg.content[0].text
 
-        if result.returncode != 0:
-            _write_job(job_id, {
-                "status": "error",
-                "error": result.stderr.strip() or "Claude Code returned a non-zero exit code.",
-            })
+    if llm == "gemini":
+        import google.genai as genai
+        client = genai.Client(api_key=api_key)
+        resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        return resp.text
+
+    if llm == "chatgpt":
+        import openai
+        client = openai.OpenAI(api_key=api_key)
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=8000,
+        )
+        return resp.choices[0].message.content
+
+    raise ValueError(f"Unknown llm: {llm}")
+
+
+def extract_report_job(job_id, llm, api_key, source_type, url, pdf_bytes):
+    try:
+        if source_type == "pdf":
+            report_text = _extract_pdf_text(pdf_bytes)
+        else:
+            report_text = _fetch_report_text(url)
+
+        if not report_text.strip():
+            _write_job(job_id, {"status": "error", "error": "Could not extract text from the report."})
             return
 
-        response_text = result.stdout
+        prompt = _build_extraction_prompt(report_text, url if source_type == "url" else "")
+        response_text = _complete_llm(llm, api_key, prompt)
 
-        json_match = re.search(r"<json>(.*?)</json>", response_text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1).strip()
-        else:
-            json_match = re.search(r"\[.*\]", response_text, re.DOTALL)
-            if not json_match:
-                _write_job(job_id, {
-                    "status": "error",
-                    "error": "Claude did not return structured results. Please try again.",
-                })
-                return
-            json_str = json_match.group()
+        if "The technical report contains multiple APT incidents" in response_text:
+            _write_job(job_id, {"status": "error", "error": "The technical report contains multiple APT incidents. Please provide a report covering exactly one incident."})
+            return
 
-        json_str = re.sub(r"^```(?:json)?\n?", "", json_str.strip())
-        json_str = re.sub(r"\n?```$", "", json_str.strip()).strip()
+        json_str = response_text.strip()
+        json_str = re.sub(r"^```(?:json)?\n?", "", json_str)
+        json_str = re.sub(r"\n?```$", "", json_str).strip()
 
         try:
-            extracted_entries = json.loads(json_str)
-            if not isinstance(extracted_entries, list):
-                extracted_entries = [extracted_entries]
+            parsed = json.loads(json_str)
         except json.JSONDecodeError:
-            _write_job(job_id, {
-                "status": "error",
-                "error": "Failed to parse Claude's response. Please try again.",
-            })
+            _write_job(job_id, {"status": "error", "error": f"Could not parse model response as JSON. Preview: {response_text[:300]}"})
             return
 
-        # Resolve threat actor names and countries against the reference lookup
-        for item in extracted_entries:
-            if not isinstance(item, dict):
-                continue
-            actor_raw = _clean_value(item.get("threat_actor", ""), "").strip()
-            if actor_raw and actor_raw.lower() not in ("n/a", "not mentioned", ""):
-                match = threat_actor_lookup.get(actor_raw.lower())
-                if match:
-                    primary_name, country = match
-                    item["threat_actor"] = primary_name
-                    if country and country != "N/A":
-                        item["threat_country"] = country
+        entry = parsed[0] if isinstance(parsed, list) else parsed
 
-        added_entries = []
-        skipped = 0
+        if source_type == "url" and not entry.get("Download Url") or entry.get("Download Url") in ("", "N/A", "full URL of the report"):
+            entry["Download Url"] = url
 
-        with excel_lock:
-            df = read_apt_dataframe()
-            existing_urls = set(df["Download Url"].dropna().astype(str))
-            # Secondary dedup: same threat actor reported in the same month from a different URL
-            existing_actor_months = set()
-            for _, row in df.iterrows():
-                actor = str(row.get("Threat Actor", "") or "").strip().lower()
-                date = str(row.get("Date", "") or "").strip()
-                if actor and actor not in ("n/a", "not mentioned") and len(date) >= 7:
-                    existing_actor_months.add((actor, date[:7]))
+        _write_job(job_id, {"status": "done", "entry": entry})
 
-            for item in extracted_entries:
-                if not isinstance(item, dict):
-                    continue
-
-                url = _clean_value(item.get("download_url", ""), "")
-                if not url or url in existing_urls:
-                    skipped += 1
-                    continue
-
-                actor_key = _clean_value(item.get("threat_actor", ""), "").lower()
-                date_key = _clean_value(item.get("date", ""), "")[:7]
-                if (actor_key and actor_key not in ("n/a", "not mentioned")
-                        and date_key
-                        and (actor_key, date_key) in existing_actor_months):
-                    skipped += 1
-                    continue
-
-                entry = {
-                    "Date": _clean_value(item.get("date"), ""),
-                    "Download Url": url,
-                    "Source": _clean_value(item.get("source")),
-                    "CVE": _clean_value(item.get("cve")),
-                    "Zero-Day": _clean_value(item.get("zero_day")),
-                    "Threat Actor": _clean_value(item.get("threat_actor")),
-                    "Threat Country": _clean_value(item.get("threat_country")),
-                    "Victims": _clean_value(item.get("victims")),
-                    "New Start Date": _clean_value(item.get("start_date"), ""),
-                    "New End Date": _clean_value(item.get("end_date"), ""),
-                    "Duration": _clean_value(item.get("duration")),
-                    "AttackVector": _clean_value(item.get("attack_vector")),
-                    "Malware": _clean_value(item.get("malware")),
-                    "Target Sectors": _clean_value(item.get("target_sectors")),
-                }
-
-                if entry["Date"]:
-                    parsed = pd.to_datetime(entry["Date"], errors="coerce")
-                    entry["Date"] = "" if pd.isna(parsed) else parsed.strftime("%Y-%m-%d")
-
-                df = pd.concat(
-                    [df, pd.DataFrame([entry], columns=ENTRY_COLUMNS)],
-                    ignore_index=True,
-                )
-                existing_urls.add(url)
-                if actor_key and date_key:
-                    existing_actor_months.add((actor_key, date_key))
-                added_entries.append({
-                    "threatActor": entry["Threat Actor"],
-                    "url": url,
-                    "date": entry["Date"],
-                })
-
-            if added_entries:
-                write_apt_dataframe(df)
-
-        _write_job(job_id, {
-            "status": "done",
-            "added": len(added_entries),
-            "skipped": skipped,
-            "entries": added_entries,
-        })
-
-    except subprocess.TimeoutExpired:
-        _write_job(job_id, {
-            "status": "error",
-            "error": "Claude Code timed out after 5 minutes. Try again.",
-        })
     except Exception as e:
         _write_job(job_id, {"status": "error", "error": str(e)})
 
 
-@app.route('/run-claude', methods=['POST'])
-def run_claude_start():
-    job_id = str(uuid.uuid4())
-    _write_job(job_id, {"status": "running"})
+@app.route('/extract-report', methods=['POST'])
+def extract_report_start():
+    try:
+        payload = request.get_json(force=True) or {}
+        llm = payload.get("llm", "")
+        api_key = (payload.get("apiKey") or "").strip()
+        source_type = payload.get("sourceType", "url")
 
-    thread = threading.Thread(target=run_claude_job, args=(job_id,))
-    thread.daemon = True
-    thread.start()
+        if llm not in ("claude", "gemini", "chatgpt"):
+            return jsonify({"error": "llm must be claude, gemini, or chatgpt"}), 400
+        if not api_key:
+            return jsonify({"error": "apiKey is required"}), 400
 
-    return jsonify({"jobId": job_id}), 202
+        url = ""
+        pdf_bytes = None
+
+        if source_type == "url":
+            url = (payload.get("url") or "").strip()
+            if not url.startswith(("http://", "https://")):
+                return jsonify({"error": "A valid URL starting with http:// or https:// is required"}), 400
+        elif source_type == "pdf":
+            pdf_b64 = payload.get("pdfBase64", "")
+            if not pdf_b64:
+                return jsonify({"error": "pdfBase64 is required for PDF source"}), 400
+            pdf_bytes = base64.b64decode(pdf_b64)
+            if len(pdf_bytes) > 15 * 1024 * 1024:
+                return jsonify({"error": "PDF must be under 15 MB"}), 400
+        else:
+            return jsonify({"error": "sourceType must be url or pdf"}), 400
+
+        job_id = str(uuid.uuid4())
+        _write_job(job_id, {"status": "running"})
+        thread = threading.Thread(target=extract_report_job, args=(job_id, llm, api_key, source_type, url, pdf_bytes))
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({"jobId": job_id}), 202
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
-@app.route('/run-claude/<job_id>', methods=['GET'])
-def run_claude_status(job_id):
+@app.route('/extract-report/<job_id>', methods=['GET'])
+def extract_report_status(job_id):
     job = _read_job(job_id)
     if job is None:
         return jsonify({"error": "Job not found."}), 404
     return jsonify(job), 200
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), debug=True, use_reloader=True)
