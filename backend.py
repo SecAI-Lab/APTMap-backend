@@ -573,6 +573,14 @@ def get_apt_data():
             if error:
                 return jsonify({"error": error}), 400
 
+            with excel_lock:
+                df = read_apt_dataframe()
+
+            new_url = str(entry.get("Download Url", "") or "").strip().lower()
+            existing_urls = df["Download Url"].dropna().astype(str).str.strip().str.lower()
+            if existing_urls.isin([new_url]).any():
+                return jsonify({"error": "A duplicate entry already exists in the dataset."}), 409
+
             pr_url, pr_error = create_entry_pr(entry)
             if pr_error:
                 return jsonify({"error": pr_error}), 500
