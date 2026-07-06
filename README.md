@@ -21,15 +21,6 @@ The backend is a Flask REST API that serves APT incident data stored in an Excel
 - **Data API** — Serves the APT incident dataset from `APT MAP Data.xlsx`
 - **Report extraction** — Given a URL or PDF, uses Claude, Gemini, or GPT to extract structured APT incident fields
 - **Community contributions** — Entry submissions create GitHub pull requests for maintainer review rather than writing directly to the database
-- **Threat country lookup** — Country metadata served from `Threat Country.xlsx`
-
-## Tech Stack
-
-- Python / Flask
-- Pandas + OpenPyXL (Excel database)
-- Anthropic, Google Generative AI, OpenAI (LLM extraction)
-- PyGithub (pull request workflow)
-- Gunicorn (production server on Heroku)
 
 ## Running Locally
 
